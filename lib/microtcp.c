@@ -22,47 +22,30 @@
 #include "../utils/crc32.h"
 
 microtcp_sock_t
-microtcp_socket (int domain, int type, int protocol)
-{
+microtcp_socket (int domain, int type, int protocol) {
   /* Your code here */
 }
 
-int
-microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address,
-               socklen_t address_len)
-{
+int microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
   /* Your code here */
 }
 
-int
-microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address,
-                  socklen_t address_len)
-{
+int microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
   /* Your code here */
 }
 
-int
-microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address,
-                 socklen_t address_len)
-{
+int microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address, socklen_t address_len) {
   /* Your code here */
 }
 
-int
-microtcp_shutdown (microtcp_sock_t *socket, int how)
-{
+int microtcp_shutdown (microtcp_sock_t *socket, int how) {
   /* Your code here */
 }
 
-ssize_t
-microtcp_send (microtcp_sock_t *socket, const void *buffer, size_t length,
-               int flags)
-{
+ssize_t microtcp_send (microtcp_sock_t *socket, const void *buffer, size_t length, int flags) {
   /* Your code here */
 }
 
-ssize_t
-microtcp_recv (microtcp_sock_t *socket, void *buffer, size_t length, int flags)
-{
+ssize_t microtcp_recv (microtcp_sock_t *socket, void *buffer, size_t length, int flags) {
   /* Your code here */
 }
