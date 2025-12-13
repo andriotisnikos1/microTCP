@@ -21,9 +21,23 @@
 #include "microtcp.h"
 #include "../utils/crc32.h"
 
-microtcp_sock_t
-microtcp_socket (int domain, int type, int protocol) {
-  /* Your code here */
+microtcp_sock_t microtcp_socket (int domain, int type, int protocol) {
+
+  microtcp_sock_t sock;
+  sock.sd = socket(domain, type, protocol);
+
+  if (sock.sd < 0) {
+    perror("Invalid file descriptor");
+    sock.state = INVALID;
+    return sock;
+  }
+  sock.state = CLOSED;
+  sock.init_win_size = MICROTCP_WIN_SIZE;
+  sock.curr_win_size = MICROTCP_WIN_SIZE;
+  sock.ssthresh = MICROTCP_INIT_SSTHRESH;
+  sock.cwnd = MICROTCP_INIT_CWND;
+
+  return sock;
 }
 
 int microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
