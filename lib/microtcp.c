@@ -20,6 +20,7 @@
 
 #include "microtcp.h"
 #include "../utils/crc32.h"
+#include <stdio.h>
 
 microtcp_sock_t microtcp_socket (int domain, int type, int protocol) {
 
@@ -27,7 +28,7 @@ microtcp_sock_t microtcp_socket (int domain, int type, int protocol) {
   sock.sd = socket(domain, type, protocol);
 
   if (sock.sd < 0) {
-    perror("Invalid file descriptor");
+    perror("[microtcp_socket] Invalid file descriptor");
     sock.state = INVALID;
     return sock;
   }
