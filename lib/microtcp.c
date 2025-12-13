@@ -42,6 +42,7 @@ microtcp_sock_t microtcp_socket (int domain, int type, int protocol) {
 }
 
 int microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
+  
     int bind_result = bind(socket->sd, address, address_len);
     if (bind_result < 0) {
         perror("[microtcp_bind] bind failed");
@@ -51,11 +52,11 @@ int microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address, sock
     return bind_result;
 }
 
-int microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
+int microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address, socklen_t address_len) {
   /* Your code here */
 }
 
-int microtcp_accept (microtcp_sock_t *socket, struct sockaddr *address, socklen_t address_len) {
+int microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
   /* Your code here */
 }
 
