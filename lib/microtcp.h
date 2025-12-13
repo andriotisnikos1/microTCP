@@ -103,8 +103,7 @@ typedef struct
 } microtcp_header_t;
 
 
-microtcp_sock_t
-microtcp_socket (int domain, int type, int protocol);
+microtcp_sock_t microtcp_socket (int domain, int type, int protocol);
 
 int microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len);
 
