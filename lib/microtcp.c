@@ -42,7 +42,13 @@ microtcp_sock_t microtcp_socket (int domain, int type, int protocol) {
 }
 
 int microtcp_bind (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
-  /* Your code here */
+    int bind_result = bind(socket->sd, address, address_len);
+    if (bind_result < 0) {
+        perror("[microtcp_bind] bind failed");
+        return bind_result;
+    }
+
+    return bind_result;
 }
 
 int microtcp_connect (microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
