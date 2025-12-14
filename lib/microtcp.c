@@ -20,6 +20,7 @@
 
  #include "microtcp.h"
  #include "../utils/crc32.h"
+#include <ctime>
  #include <stdint.h>
  #include <string.h>
  #include <stdlib.h>
@@ -114,7 +115,7 @@
      }
 
      // Construct SYN-ACK response
-     outgoing_mtcp_header.seq_number = htonl(0);
+     outgoing_mtcp_header.seq_number = htonl(rand() % 100 + 1);
      outgoing_mtcp_header.ack_number = htonl(internal_mtcp_header.seq_number + 1);
      outgoing_mtcp_header.control = htons(SYN_ACK);
      outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
@@ -202,7 +203,117 @@
  }
 
  int microtcp_connect(microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
+        uint32_t calculated_checksum;
+        ssize_t send_status, recv_status;
+        microtcp_header_t outgoing_mtcp_header, *incoming_mtcp_header = (microtcp_header_t *)malloc(sizeof(microtcp_header_t)), internal_mtcp_header;
+        uint8_t checksum_byte_arr[MICROTCP_RECVBUF_LEN];
 
+        if (!incoming_mtcp_header) {
+            perror("[microtcp_connect] malloc failed\n");
+            return -1;
+        }
+
+        // start SYN handshake - construct SYN packet
+        outgoing_mtcp_header.seq_number = htonl(rand() % 100 + 1);
+        outgoing_mtcp_header.ack_number = htonl(0);
+        outgoing_mtcp_header.control = htons(SYN);
+        outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
+        outgoing_mtcp_header.data_len = htonl(0);
+        outgoing_mtcp_header.future_use0 = htonl(0);
+        outgoing_mtcp_header.future_use1 = htonl(0);
+        outgoing_mtcp_header.future_use2 = htonl(0);
+        outgoing_mtcp_header.checksum = 0;
+
+        // compute SYN checksum
+        for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
+            checksum_byte_arr[i] = 0;
+        }
+        memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+        calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+
+        // send SYN packet
+        send_status = sendto(socket->sd, &outgoing_mtcp_header,
+                             sizeof(microtcp_header_t), 0, address, address_len);
+        if (send_status < 0) {
+            perror("[microtcp_connect - SYN] sendto failed\n");
+            return -1;
+        }
+
+        // wait for SYN-ACK response
+        recv_status = recvfrom(socket->sd, incoming_mtcp_header,
+                               sizeof(microtcp_header_t), 0, address, &address_len);
+        if (recv_status < 0) {
+            perror("[microtcp_connect - SYN-ACK] recvfrom failed\n");
+            free(incoming_mtcp_header);
+            return -1;
+        }
+
+        // construct internal header for checksum verification
+        internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+        internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
+        internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+        internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+        internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+        internal_mtcp_header.future_use0 = 0;
+        internal_mtcp_header.future_use1 = 0;
+        internal_mtcp_header.future_use2 = 0;
+        internal_mtcp_header.checksum = 0;
+
+        // check control = SYN-ACK
+        if (htons(incoming_mtcp_header->control) != SYN_ACK) {
+            perror("[microtcp_connect] expected SYN-ACK control flag\n");
+            free(incoming_mtcp_header);
+            return -1;
+        }
+
+        // calculate checksum
+        for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
+            checksum_byte_arr[i] = 0;
+        }
+        memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+        calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+
+        if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+            perror("[microtcp_connect - SYN-ACK] checksum mismatch\n");
+            free(incoming_mtcp_header);
+            return -1;
+        }
+
+        // construct final ACK packet
+        outgoing_mtcp_header.seq_number = outgoing_mtcp_header.seq_number;
+        outgoing_mtcp_header.ack_number = htonl(internal_mtcp_header.seq_number + 1);
+        outgoing_mtcp_header.control = htons(ACK);
+        outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
+        outgoing_mtcp_header.data_len = htonl(0);
+        outgoing_mtcp_header.future_use0 = htonl(0);
+        outgoing_mtcp_header.future_use1 = htonl(0);
+        outgoing_mtcp_header.future_use2 = htonl(0);
+        outgoing_mtcp_header.checksum = 0;
+
+        // calculate ACK checksum
+        for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
+            checksum_byte_arr[i] = 0;
+        }
+        memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+        calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+
+        // send final ACK packet
+        send_status = sendto(socket->sd, &outgoing_mtcp_header,
+                             sizeof(microtcp_header_t), 0, address, address_len);
+        if (send_status < 0) {
+            perror("[microtcp_connect - ACK] sendto failed\n");
+            free(incoming_mtcp_header);
+            return -1;
+        }
+
+        // connection established successfully. update socket state
+        socket->state = ESTABLISHED;
+        socket->seq_number = ntohl(outgoing_mtcp_header.seq_number);
+        socket->ack_number = internal_mtcp_header.seq_number + 1;
+        free(incoming_mtcp_header);
+        return 0;
  }
 
  int microtcp_shutdown(microtcp_sock_t *socket, int how) {
