@@ -53,6 +53,18 @@ typedef enum
 
 
 /**
+ * Control enums for microTCP header
+ */
+typedef enum
+{
+    SYN,
+    ACK,
+    FIN,
+    SYN_ACK
+} microtcp_control_t;
+
+
+/**
  * This is the microTCP socket structure. It holds all the necessary
  * information of each microTCP socket.
  *
