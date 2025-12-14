@@ -128,11 +128,11 @@
      for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
          checksum_byte_arr[i] = 0;
      }
-        memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
-        calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+     memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+     calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+     outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
 
-    // send syn-ack, check for error
+     // send syn-ack, check for error
      send_status = sendto(socket->sd, &outgoing_mtcp_header,
                          sizeof(microtcp_header_t), 0, address, address_len);
      if (send_status < 0) {
@@ -140,7 +140,6 @@
          free(incoming_mtcp_header);
          return -1;
      }
-
 
      // wait for final ack
      recv_status = recvfrom(socket->sd, incoming_mtcp_header,
@@ -152,59 +151,58 @@
      }
 
      // contruct internal header for checksum verification
-        internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
-        internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
-        internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
-        internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
-        internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
-        internal_mtcp_header.future_use0 = 0;
-        internal_mtcp_header.future_use1 = 0;
-        internal_mtcp_header.future_use2 = 0;
-        internal_mtcp_header.checksum = 0;
+     internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+     internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
+     internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+     internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+     internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+     internal_mtcp_header.future_use0 = 0;
+     internal_mtcp_header.future_use1 = 0;
+     internal_mtcp_header.future_use2 = 0;
+     internal_mtcp_header.checksum = 0;
 
-        // check control = ACK
-        if (htons(incoming_mtcp_header->control) != ACK) {
-            perror("[microtcp_accept] expected ACK control flag\n");
-            free(incoming_mtcp_header);
-            return -1;
-        }
+     // check control = ACK
+     if (htons(incoming_mtcp_header->control) != ACK) {
+         perror("[microtcp_accept] expected ACK control flag\n");
+         free(incoming_mtcp_header);
+         return -1;
+     }
 
-        // calculate checksum
-        for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
-            checksum_byte_arr[i] = 0;
-        }
-        memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
-        calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+     // calculate checksum
+     for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
+         checksum_byte_arr[i] = 0;
+     }
+     memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+     calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
 
-        if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
-            perror("[microtcp_accept - ACK] checksum mismatch\n");
-            free(incoming_mtcp_header);
-            return -1;
-        }
+     if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+         perror("[microtcp_accept - ACK] checksum mismatch\n");
+         free(incoming_mtcp_header);
+         return -1;
+     }
 
-        // check for correct ack number, seq
-        if (ntohl(incoming_mtcp_header->seq_number) != outgoing_mtcp_header.ack_number) {
-            perror("[microtcp_accept] incorrect seq number in ACK\n");
-            free(incoming_mtcp_header);
-            return -1;
-        }
-        if (ntohl(incoming_mtcp_header->ack_number) != outgoing_mtcp_header.seq_number + 1) {
-            perror("[microtcp_accept] incorrect ack number in ACK\n");
-            free(incoming_mtcp_header);
-            return -1;
-        }
+     // check for correct ack number, seq
+     if (ntohl(incoming_mtcp_header->seq_number) != outgoing_mtcp_header.ack_number) {
+         perror("[microtcp_accept] incorrect seq number in ACK\n");
+         free(incoming_mtcp_header);
+         return -1;
+     }
+     if (ntohl(incoming_mtcp_header->ack_number) != outgoing_mtcp_header.seq_number + 1) {
+         perror("[microtcp_accept] incorrect ack number in ACK\n");
+         free(incoming_mtcp_header);
+         return -1;
+     }
 
-        // connection established successfully. update socket state
-        socket->state = ESTABLISHED;
-        socket->seq_number = internal_mtcp_header.ack_number;
-        socket->ack_number = internal_mtcp_header.seq_number + 1;
+     // connection established successfully. update socket state
+     socket->state = ESTABLISHED;
+     socket->seq_number = internal_mtcp_header.ack_number;
+     socket->ack_number = internal_mtcp_header.seq_number + 1;
 
      return 0;
  }
 
- int microtcp_connect(microtcp_sock_t *socket, const struct sockaddr *address,
-                      socklen_t address_len) {
-     /* Your code here */
+ int microtcp_connect(microtcp_sock_t *socket, const struct sockaddr *address, socklen_t address_len) {
+
  }
 
  int microtcp_shutdown(microtcp_sock_t *socket, int how) {
