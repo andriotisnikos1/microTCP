@@ -198,6 +198,8 @@
      socket->state = ESTABLISHED;
      socket->seq_number = internal_mtcp_header.ack_number;
      socket->ack_number = internal_mtcp_header.seq_number + 1;
+        socket->peer_address = address;
+        socket->peer_address_len = address_len;
 
      return 0;
  }
@@ -312,12 +314,51 @@
         socket->state = ESTABLISHED;
         socket->seq_number = ntohl(outgoing_mtcp_header.seq_number);
         socket->ack_number = internal_mtcp_header.seq_number + 1;
+        socket->peer_address = address;
+        socket->peer_address_len = address_len;
         free(incoming_mtcp_header);
         return 0;
  }
 
- int microtcp_shutdown(microtcp_sock_t *socket, int how) {
- }
+int microtcp_shutdown(microtcp_sock_t *socket, int how) {
+    uint32_t calculated_checksum;
+    ssize_t send_status, recv_status;
+    microtcp_header_t outgoing_mtcp_header, *incoming_mtcp_header = (microtcp_header_t *)malloc(sizeof(microtcp_header_t)), internal_mtcp_header;
+    uint8_t checksum_byte_arr[MICROTCP_RECVBUF_LEN];
+
+    if (!incoming_mtcp_header) {
+        perror("[microtcp_shutdown] malloc failed\n");
+        return -1;
+    }
+
+    // start FIN handshake - construct FIN packet
+    outgoing_mtcp_header.seq_number = htonl(socket->seq_number);
+    outgoing_mtcp_header.ack_number = htonl(socket->ack_number);
+    outgoing_mtcp_header.control = htons(FIN);
+    outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
+    outgoing_mtcp_header.data_len = htonl(0);
+    outgoing_mtcp_header.future_use0 = htonl(0);
+    outgoing_mtcp_header.future_use1 = htonl(0);
+    outgoing_mtcp_header.future_use2 = htonl(0);
+    outgoing_mtcp_header.checksum = 0; // will be calculated next
+
+    // compute FIN checksum
+    for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
+        checksum_byte_arr[i] = 0;
+    }
+    memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+    calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+    outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+
+    // send FIN packet
+    send_status = sendto(socket->sd, &outgoing_mtcp_header,
+                            sizeof(microtcp_header_t), 0, socket->peer_address, socket->peer_address_len);
+    if (send_status < 0) {
+        perror("[microtcp_shutdown - FIN] sendto failed\n");
+        free(incoming_mtcp_header);
+        return -1;
+    }
+}
 
  ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer,
                        size_t length, int flags) {
