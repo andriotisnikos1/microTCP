@@ -20,7 +20,7 @@
 
  #include "microtcp.h"
  #include "../utils/crc32.h"
-#include <ctime>
+ #include <time.h>
  #include <stdint.h>
  #include <string.h>
  #include <stdlib.h>
@@ -317,7 +317,6 @@
  }
 
  int microtcp_shutdown(microtcp_sock_t *socket, int how) {
-     /* Your code here */
  }
 
  ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer,
