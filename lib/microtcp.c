@@ -475,6 +475,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     // connection terminated successfully. update socket state
     socket->state = CLOSED;
     free(incoming_mtcp_header);
+    shutdown(socket->sd, how);
     return 0;
 }
 

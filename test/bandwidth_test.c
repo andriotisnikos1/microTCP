@@ -176,7 +176,7 @@ int server_microtcp (uint16_t listen_port, const char *file) {
   buffer = (uint8_t *) malloc (CHUNK_SIZE);
   if (!buffer) {
     perror ("Allocate application receive buffer");
-    exit(EXIT_FAILURE);
+    return -EXIT_FAILURE;
   }
 
   /* Open the file for writing the data from the network */
@@ -184,7 +184,7 @@ int server_microtcp (uint16_t listen_port, const char *file) {
   if (!fp) {
     perror ("Open file for writing");
     free (buffer);
-    exit(EXIT_FAILURE);
+    return -EXIT_FAILURE;
   }
 
   sock = microtcp_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -192,7 +192,7 @@ int server_microtcp (uint16_t listen_port, const char *file) {
     perror ("Opening microTCP socket");
     free (buffer);
     fclose (fp);
-    exit(EXIT_FAILURE);
+    return -EXIT_FAILURE;
   }
 
   memset (&sin, 0, sizeof(struct sockaddr_in));
@@ -205,7 +205,7 @@ int server_microtcp (uint16_t listen_port, const char *file) {
     perror ("microTCP bind");
     free (buffer);
     fclose (fp);
-    exit(EXIT_FAILURE);
+    return -EXIT_FAILURE;
   }
 
   client_addr_len = sizeof(struct sockaddr);
@@ -214,7 +214,7 @@ int server_microtcp (uint16_t listen_port, const char *file) {
     perror ("microTCP accept");
     free (buffer);
     fclose (fp);
-    exit(EXIT_FAILURE);
+    return -EXIT_FAILURE;
   }
 
   /*
@@ -227,8 +227,8 @@ int server_microtcp (uint16_t listen_port, const char *file) {
    * right and careful way :-)
    */
 
-   sock.peer_address = sin;
-   sock.peer_address_len = sizeof(struct sockaddr_in);
+  sock.peer_address = (struct sockaddr *) &sin;
+  sock.peer_address_len = sizeof(struct sockaddr_in);
   clock_gettime (CLOCK_MONOTONIC_RAW, &start_time);
   received = microtcp_recv ( &sock, buffer, CHUNK_SIZE, 0);
   while (received > 0) {
@@ -237,14 +237,18 @@ int server_microtcp (uint16_t listen_port, const char *file) {
     if (written * sizeof(uint8_t) != received) {
       printf ("Failed to write to the file the"
               " amount of data received from the network.\n");
+      microtcp_shutdown (&sock, SHUT_RDWR);
+      close (sock.sd);
       free (buffer);
       fclose (fp);
-      exit(EXIT_FAILURE);
+      return -EXIT_FAILURE;
     }
   }
   clock_gettime (CLOCK_MONOTONIC_RAW, &end_time);
   print_statistics (total_bytes, start_time, end_time);
 
+  microtcp_shutdown (&sock, SHUT_RDWR);
+  close (sock.sd);
   fclose (fp);
   free (buffer);
 
