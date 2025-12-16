@@ -452,7 +452,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     }
 
     // finalize shutdown: construct final ACK packet
-    outgoing_mtcp_header.seq_number = htonl(socket->seq_number);
+    outgoing_mtcp_header.seq_number = htonl(socket->seq_number + 1);
     outgoing_mtcp_header.ack_number = htonl(internal_mtcp_header.seq_number + 1);
     outgoing_mtcp_header.control = htons(ACK);
     outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
@@ -481,6 +481,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
 
     // connection terminated successfully. update socket state
     socket->state = CLOSED;
+    socket->seq_number = socket->seq_number + 1;
     free(incoming_mtcp_header);
     shutdown(socket->sd, how);
     return 0;
