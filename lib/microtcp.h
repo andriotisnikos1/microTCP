@@ -57,10 +57,11 @@ typedef enum
  */
 typedef enum
 {
-    SYN,
-    ACK,
-    FIN,
-    SYN_ACK
+    SYN = 16384,
+    ACK = 4096,
+    RST = 8192,
+    FIN = 32768,
+    SYN_ACK = SYN + ACK
 } microtcp_control_t;
 
 
