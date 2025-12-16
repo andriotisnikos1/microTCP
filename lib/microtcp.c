@@ -387,6 +387,13 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
         return -1;
     }
 
+    // check ack number = seq + 1
+    if (ntohl(incoming_mtcp_header->ack_number) != socket->seq_number + 1) {
+        perror("[microtcp_shutdown] incorrect ack number in ACK\n");
+        free(incoming_mtcp_header);
+        return -1;
+    }
+
     // calculate checksum
     for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
         checksum_byte_arr[i] = 0;
@@ -403,7 +410,6 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
 
     // transition to CLOSING_BY_HOST state after successful FIN-ACK exchange
     socket->state = CLOSING_BY_HOST;
-
 
     // await FIN from peer - second part of shutdown
     recv_status = recvfrom(socket->sd, incoming_mtcp_header, sizeof(microtcp_header_t), 0, socket->peer_address, &socket->peer_address_len);
