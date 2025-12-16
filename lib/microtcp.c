@@ -283,7 +283,8 @@
         }
 
         // construct final ACK packet
-        outgoing_mtcp_header.seq_number = outgoing_mtcp_header.seq_number;
+        // keep same seq number as the one in SYN, just + 1. usage of outgoing_mtcp_header.seq_number is correct
+        outgoing_mtcp_header.seq_number = htonl(ntohl(outgoing_mtcp_header.seq_number) + 1);
         outgoing_mtcp_header.ack_number = htonl(internal_mtcp_header.seq_number + 1);
         outgoing_mtcp_header.control = htons(ACK);
         outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
