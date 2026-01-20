@@ -334,8 +334,8 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
 
     // start FIN handshake - construct FIN packet
     outgoing_mtcp_header.seq_number = htonl(socket->seq_number);
-    outgoing_mtcp_header.ack_number = htonl(0);
-    outgoing_mtcp_header.control = htons(FIN);
+    outgoing_mtcp_header.ack_number = htonl(socket->ack_number);
+    outgoing_mtcp_header.control = htons(FIN + ACK);
     outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
     outgoing_mtcp_header.data_len = htonl(0);
     outgoing_mtcp_header.future_use0 = htonl(0);
