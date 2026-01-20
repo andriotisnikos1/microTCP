@@ -499,6 +499,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
     int i;
     struct timeval timeout;
     int dup_ack;
+    int retransmit;
 
     if (buffer == NULL || length == 0) {
         if (buffer == NULL) {
@@ -510,7 +511,10 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
     }
 
     seq = socket->seq_number;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = MICROTCP_ACK_TIMEOUT_US;
     dup_ack = 0;
+    retransmit = 0;
     data_sent = 0;
     remaining = length;
 
@@ -551,19 +555,53 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
         }
 
         // check for a semi-filled chunk
-        if (bytes_to_send % MICROTCP_MSS) {
+        if (bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)) != 0) {
+            chunks++;
             
+            seq++;
+            insert(seq);
+
+            // Construct packet
+            outgoing_mtcp_header.seq_number = htonl(seq);
+            outgoing_mtcp_header.ack_number = htonl(0);
+            outgoing_mtcp_header.control = htonl(0);
+            outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
+            outgoing_mtcp_header.data_len = htonl(bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)));
+            outgoing_mtcp_header.future_use0 = htonl(0);
+            outgoing_mtcp_header.future_use1 = htonl(0);
+            outgoing_mtcp_header.future_use2 = htonl(0);
+            outgoing_mtcp_header.checksum = 0; // will be calculated next
+
+            // calculate ACK checksum
+            for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
+                checksum_byte_arr[i] = 0;
+            }
+            memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+            calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+            outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+
+            // send packet
+            sendto(socket->sd, &outgoing_mtcp_header, sizeof(microtcp_header_t) + bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)), 0, socket->peer_address, socket->peer_address_len);
+        
+            socket->seq_number += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
+            data_sent += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
         }
 
         // wait for acks
         for (i = 0; i < chunks; i++) {
-            timeout.tv_sec = 0;
-            timeout.tv_usec = MICROTCP_ACK_TIMEOUT_US;
             if (setsockopt(socket->sd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof (struct timeval))) {
+                socket->state = INVALID;
                 perror("[microtcp_send] setsockopt failed\n");
+                return 0;
+            }
+            if (recvfrom(socket->sd, incoming_mtcp_header, sizeof(microtcp_header_t), 0, socket->peer_address, &socket->peer_address_len) < 0) {
+                retransmit = 1;
+                
+                break;
             }
         }
 
+        // process acks
     }
 }
 
