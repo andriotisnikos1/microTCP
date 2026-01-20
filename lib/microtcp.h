@@ -117,6 +117,12 @@ typedef struct
   uint32_t checksum;            /**< CRC-32 checksum, see crc32() in utils folder */
 } microtcp_header_t;
 
+struct acks {
+  size_t ack_number;
+  struct acks *next;
+};
+
+struct acks *ack_list_head;
 
 microtcp_sock_t microtcp_socket (int domain, int type, int protocol);
 
@@ -141,5 +147,9 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how);
 ssize_t microtcp_send (microtcp_sock_t *socket, const void *buffer, size_t length, int flags);
 
 ssize_t microtcp_recv (microtcp_sock_t *socket, void *buffer, size_t length, int flags);
+
+void insert(size_t ack_number);
+
+int remove(size_t ack_number);
 
 #endif /* LIB_MICROTCP_H_ */

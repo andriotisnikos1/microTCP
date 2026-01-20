@@ -487,12 +487,98 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     return 0;
 }
 
- ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer,
-                       size_t length, int flags) {
-     /* Your code here */
- }
+ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length, int flags) {
+    size_t remaining;
+    size_t data_sent;
+    size_t bytes_to_send;
+    size_t chunks;
+    microtcp_header_t outgoing_mtcp_header, *incoming_mtcp_header = (microtcp_header_t *)malloc(sizeof(microtcp_header_t)), internal_mtcp_header;
+    size_t seq;
+    int i;
+    struct timeval timeout;
+    int dup_ack;
 
- ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length,
-                       int flags) {
-     /* Your code here */
- }
+    if (buffer == NULL || length == 0) {
+        if (buffer == NULL) {
+            perror("[microtcp_send] Empty buffer\n");
+        } else {
+            perror("[microtcp_send] Zero length\n");
+        }
+        return 0;
+    }
+
+    seq = socket->seq_number;
+    dup_ack = 0;
+    data_sent = 0;
+    remaining = length;
+
+    while (data_sent < length) {
+
+        bytes_to_send = min(socket->curr_win_size, socket->cwnd, remaining);
+        chunks = bytes_to_send / MICROTCP_MSS;
+
+        // send
+        for (i = 0; i < chunks; i++) {
+            seq++;
+            insert(seq);
+
+            outgoing_mtcp_header.seq_number = htonl(seq);
+            outgoing_mtcp_header.ack_number = 0;
+            outgoing_mtcp_header.control = 0;
+
+        }
+
+        // check for a semi-filled chunk
+        if (bytes_to_send % MICROTCP_MSS) {
+            
+        }
+
+        // wait for acks
+        for (i = 0; i < chunks; i++) {
+            timeout.tv_sec = 0;
+            timeout.tv_usec = MICROTCP_ACK_TIMEOUT_US;
+            setsockopt(socket->sd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof (struct timeval));
+        }
+
+    }
+}
+
+ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int flags) {
+    /* Your code here */
+}
+
+void insert(size_t ack_number) {
+    struct acks *new_ack = (struct acks *)malloc(sizeof(struct acks));
+    new_ack->ack_number = ack_number;
+    new_ack->next = NULL;
+
+    if (ack_list_head == NULL) {
+        ack_list_head = new_ack;
+    } else {
+        struct acks *current = ack_list_head;
+        while (current->next != NULL) {
+            current = current->next;
+        }
+        current->next = new_ack;
+    }
+}
+
+int remove(size_t ack_number) {
+    struct acks *current = ack_list_head;
+    struct acks *previous = NULL;
+
+    while (current != NULL) {
+        if (current->ack_number == ack_number) {
+            if (previous == NULL) {
+                ack_list_head = current->next;
+            } else {
+                previous->next = current->next;
+            }
+            free(current);
+            return 1; // Acknowledgment removed
+        }
+        previous = current;
+        current = current->next;
+    }
+    return 0; // Acknowledgment not found
+}
