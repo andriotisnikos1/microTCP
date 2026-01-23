@@ -488,18 +488,19 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
 }
 
 ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length, int flags) {
-    size_t remaining;
-    size_t data_sent;
-    size_t bytes_to_send;
-    size_t chunks;
+    size_t remaining; // remaining data to be sent
+    size_t data_sent; // total data sent
+    size_t bytes_to_send; // bytes to send in one window
+    size_t chunks; // number of packet chunks we need to send
     uint32_t calculated_checksum;
     microtcp_header_t outgoing_mtcp_header, *incoming_mtcp_header = (microtcp_header_t *)malloc(sizeof(microtcp_header_t)), internal_mtcp_header;
-    uint8_t checksum_byte_arr[MICROTCP_RECVBUF_LEN];
-    size_t seq;
+    uint8_t checksum_byte_arr[MICROTCP_MSS];
+    uint8_t *packet = (uint8_t *)malloc(MICROTCP_MSS); // buffer for the packet to be sent
+    size_t seq; // sequence number
     int i;
     struct timeval timeout;
-    int dup_ack;
-    int retransmit;
+    int dup_ack; // duplicate acks counter
+    int retransmit; // retransmission flag
 
     if (buffer == NULL || length == 0) {
         if (buffer == NULL) {
@@ -528,7 +529,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             seq++;
             insert(seq);
 
-            // Construct packet
+            // Construct packet to calculate checksum
             outgoing_mtcp_header.seq_number = htonl(seq);
             outgoing_mtcp_header.ack_number = htonl(0);
             outgoing_mtcp_header.control = htonl(0);
@@ -540,15 +541,20 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             outgoing_mtcp_header.checksum = 0; // will be calculated next
 
             // calculate ACK checksum
-            for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
-                checksum_byte_arr[i] = 0;
+            for (int j = 0; j < MICROTCP_MSS; j++) {
+                checksum_byte_arr[j] = 0;
             }
             memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
-            calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+            memcpy(checksum_byte_arr + sizeof(microtcp_header_t), buffer + data_sent, MICROTCP_MSS - sizeof(microtcp_header_t));
+            calculated_checksum = crc32(checksum_byte_arr, MICROTCP_MSS);
             outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
 
+            // prepare full packet
+            memcpy(packet, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+            memcpy(packet + sizeof(microtcp_header_t), buffer + data_sent, MICROTCP_MSS - sizeof(microtcp_header_t));
+
             // send packet
-            sendto(socket->sd, &outgoing_mtcp_header, sizeof(microtcp_header_t) + (MICROTCP_MSS - sizeof(microtcp_header_t)), 0, socket->peer_address, socket->peer_address_len);
+            sendto(socket->sd, packet, MICROTCP_MSS, 0, socket->peer_address, socket->peer_address_len);
         
             socket->seq_number += (MICROTCP_MSS - sizeof(microtcp_header_t));
             data_sent += (MICROTCP_MSS - sizeof(microtcp_header_t));
@@ -573,21 +579,26 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             outgoing_mtcp_header.checksum = 0; // will be calculated next
 
             // calculate ACK checksum
-            for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
-                checksum_byte_arr[i] = 0;
+            for (int j = 0; j < MICROTCP_MSS; j++) {
+                checksum_byte_arr[j] = 0;
             }
             memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
-            calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+            memcpy(checksum_byte_arr + sizeof(microtcp_header_t), buffer + data_sent, MICROTCP_MSS - sizeof(microtcp_header_t));
+            calculated_checksum = crc32(checksum_byte_arr, MICROTCP_MSS);
             outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
 
+            // prepare full packet
+            memcpy(packet, &outgoing_mtcp_header, sizeof(microtcp_header_t));
+            memcpy(packet + sizeof(microtcp_header_t), buffer + data_sent, bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)));
+
             // send packet
-            sendto(socket->sd, &outgoing_mtcp_header, sizeof(microtcp_header_t) + bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)), 0, socket->peer_address, socket->peer_address_len);
+            sendto(socket->sd, packet, sizeof(microtcp_header_t) + bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)), 0, socket->peer_address, socket->peer_address_len);
         
             socket->seq_number += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
             data_sent += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
         }
 
-        // wait for acks
+        // get the acks
         for (i = 0; i < chunks; i++) {
             if (setsockopt(socket->sd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof (struct timeval))) {
                 socket->state = INVALID;
@@ -625,7 +636,8 @@ void insert(size_t ack_number) {
     }
 }
 
-int remove(size_t ack_number) {
+// Removes ack
+void removeAck(size_t ack_number) {
     struct acks *current = ack_list_head;
     struct acks *previous = NULL;
 
@@ -637,10 +649,36 @@ int remove(size_t ack_number) {
                 previous->next = current->next;
             }
             free(current);
-            return 1; // Acknowledgment removed
+            return;
         }
         previous = current;
         current = current->next;
     }
-    return 0; // Acknowledgment not found
+    return;
+}
+
+// Removes all acks int the list after and including ack_number
+void removeAllAcksFrom(size_t ack_number) {
+    struct acks *current = ack_list_head;
+    struct acks *previous = NULL;
+
+    while (current != NULL) {
+        if (current->ack_number != ack_number) {
+            if (previous == NULL) {
+                // Remove from head
+                ack_list_head = NULL;
+            } else {
+                previous->next = NULL;
+            }
+            // Free remaining nodes
+            while (current != NULL) {
+                struct acks *temp = current;
+                current = current->next;
+                free(temp);
+            }
+            return;
+        }
+        previous = current;
+        current = current->next;
+    }
 }
