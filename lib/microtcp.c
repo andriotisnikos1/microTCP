@@ -20,11 +20,15 @@
 
  #include "microtcp.h"
  #include "../utils/crc32.h"
+#include <stddef.h>
  #include <time.h>
  #include <stdint.h>
  #include <string.h>
  #include <stdlib.h>
  #include <stdio.h>
+
+ void removeAck(size_t ack_number);
+ void removeAllAcks();
 
  microtcp_sock_t microtcp_socket(int domain, int type, int protocol) {
      microtcp_sock_t sock;
@@ -514,6 +518,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
     }
 
     seq = socket->seq_number;
+    // _mark: dont know wtf setsockopt is
     timeout.tv_sec = 0;
     timeout.tv_usec = MICROTCP_ACK_TIMEOUT_US;
     if (setsockopt(socket->sd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof (struct timeval))) {
@@ -562,7 +567,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
 
             // send packet
             sendto(socket->sd, packet, MICROTCP_MSS, 0, socket->peer_address, socket->peer_address_len);
-        
+
             socket->seq_number += (MICROTCP_MSS - sizeof(microtcp_header_t));
             data_sent += (MICROTCP_MSS - sizeof(microtcp_header_t));
             seq += (MICROTCP_MSS - sizeof(microtcp_header_t));
@@ -571,7 +576,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
         // check for a semi-filled chunk
         if (bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)) != 0) {
             chunks++;
-            
+
             insert(seq);
 
             // Construct packet
@@ -600,7 +605,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
 
             // send packet
             sendto(socket->sd, packet, sizeof(microtcp_header_t) + bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)), 0, socket->peer_address, socket->peer_address_len);
-        
+
             socket->seq_number += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
             data_sent += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
             seq += bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t));
@@ -689,7 +694,75 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
 }
 
 ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int flags) {
-    /* Your code here */
+    size_t expected_sequence_number = socket->ack_number,
+           mtcp_header_size = sizeof(microtcp_header_t),
+           incoming_data_segment_size;
+    int bytes_accumulated = 0,
+        bytes_copied = 0,
+        is_duplicate = 0;
+    ssize_t received_bytes;
+    uint8_t incoming_packet_buffer[MICROTCP_MSS + mtcp_header_size],
+            packet_buffer_data_segment[MICROTCP_MSS],
+            incoming_data_accumulator[MICROTCP_RECVBUF_LEN],
+            checksum_byte_arr[MICROTCP_MSS + mtcp_header_size];
+    microtcp_header_t incoming_mtcp_header,
+                      internal_mtcp_header,
+                      outgoing_mtcp_header;
+    uint32_t calculated_checksum;
+
+
+    while (bytes_copied < length) {
+        // receive data. return -1 on error as per spec
+        received_bytes = recvfrom(socket->sd, incoming_packet_buffer, MICROTCP_MSS + mtcp_header_size, 0, socket->peer_address, &socket->peer_address_len);
+        if (received_bytes < 0) return -1;
+
+        incoming_data_segment_size = received_bytes - mtcp_header_size;
+
+        // direct incoming data to respective structures
+        memcpy(&incoming_mtcp_header, incoming_packet_buffer, mtcp_header_size);
+        memcpy(packet_buffer_data_segment, incoming_packet_buffer + mtcp_header_size, incoming_data_segment_size);
+
+        // construct internal header for checksum verification
+        internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header.seq_number);
+        internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header.ack_number);
+        internal_mtcp_header.control = ntohs(incoming_mtcp_header.control);
+        internal_mtcp_header.window = ntohs(incoming_mtcp_header.window);
+        internal_mtcp_header.data_len = ntohl(incoming_mtcp_header.data_len);
+        internal_mtcp_header.future_use0 = 0;
+        internal_mtcp_header.future_use1 = 0;
+        internal_mtcp_header.future_use2 = 0;
+        internal_mtcp_header.checksum = 0;
+
+        // calculate checksum
+        for (int i = 0; i < MICROTCP_MSS + mtcp_header_size; i++) {
+            checksum_byte_arr[i] = 0;
+        }
+
+        memcpy(checksum_byte_arr, &internal_mtcp_header, mtcp_header_size);
+        memcpy(checksum_byte_arr + mtcp_header_size, packet_buffer_data_segment, incoming_data_segment_size);
+
+        calculated_checksum = crc32(checksum_byte_arr, mtcp_header_size + incoming_data_segment_size);
+        if (calculated_checksum != ntohl(incoming_mtcp_header.checksum)) {
+            // checksum mismatch, ignore packet
+            continue;
+        }
+
+        // check termination by peer
+        if (internal_mtcp_header.control == FIN + ACK) {
+            socket->state = CLOSING_BY_PEER;
+            return -1;
+        }
+
+        // buffer flush check
+        if (bytes_accumulated + incoming_data_segment_size > MICROTCP_RECVBUF_LEN) {
+            // flush buffer
+            memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_accumulated);
+            bytes_copied += bytes_accumulated;
+            bytes_accumulated = 0;
+        }
+
+
+    }
 }
 
 
