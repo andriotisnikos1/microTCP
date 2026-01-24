@@ -699,8 +699,8 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
            incoming_data_segment_size;
     int bytes_accumulated = 0,
         bytes_copied = 0,
-        is_duplicate = 0;
-    ssize_t received_bytes;
+        is_out_of_order = 0;
+    ssize_t received_bytes, sent_bytes;
     uint8_t incoming_packet_buffer[MICROTCP_MSS + mtcp_header_size],
             packet_buffer_data_segment[MICROTCP_MSS],
             incoming_data_accumulator[MICROTCP_RECVBUF_LEN],
@@ -753,16 +753,57 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
             return -1;
         }
 
+        // check ooo
+        if (internal_mtcp_header.seq_number != expected_sequence_number) {
+            is_out_of_order = 1;
+        } else {
+            is_out_of_order = 0;
+        }
+
         // buffer flush check
-        if (bytes_accumulated + incoming_data_segment_size > MICROTCP_RECVBUF_LEN) {
+        if (bytes_accumulated + incoming_data_segment_size > MICROTCP_RECVBUF_LEN && !is_out_of_order) {
             // flush buffer
             memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_accumulated);
             bytes_copied += bytes_accumulated;
             bytes_accumulated = 0;
         }
 
+        // if in order, copy to user buffer
+        if (!is_out_of_order) {
+            memcpy(incoming_data_accumulator + bytes_accumulated, packet_buffer_data_segment, incoming_data_segment_size);
+            bytes_accumulated += incoming_data_segment_size;
+            expected_sequence_number += incoming_data_segment_size;
+            socket->ack_number = expected_sequence_number;
+        }
 
+        // send ack
+        outgoing_mtcp_header.seq_number = htonl(socket->seq_number);
+        outgoing_mtcp_header.ack_number = htonl(socket->ack_number);
+        outgoing_mtcp_header.control = htons(ACK);
+        outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE - bytes_accumulated); // advertise remaining buffer space
+        outgoing_mtcp_header.data_len = htonl(0);
+        outgoing_mtcp_header.future_use0 = htonl(0);
+        outgoing_mtcp_header.future_use1 = htonl(0);
+        outgoing_mtcp_header.future_use2 = htonl(0);
+        outgoing_mtcp_header.checksum = 0; // will be calculated next
+
+        // calculate ACK checksum
+        for (int i = 0; i < mtcp_header_size; i++) {
+            checksum_byte_arr[i] = 0;
+        }
+        memcpy(checksum_byte_arr, &outgoing_mtcp_header, mtcp_header_size);
+        calculated_checksum = crc32(checksum_byte_arr, mtcp_header_size);
+        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+
+        // send ACK packet
+        sent_bytes = sendto(socket->sd, &outgoing_mtcp_header, mtcp_header_size, 0, socket->peer_address, socket->peer_address_len);
+        if (sent_bytes < 0) {
+            perror("[microtcp_recv] sendto failed\n");
+            return -1;
+        }
     }
+
+    return bytes_copied;
 }
 
 
