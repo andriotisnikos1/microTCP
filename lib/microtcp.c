@@ -542,7 +542,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             // Construct packet to calculate checksum
             outgoing_mtcp_header.seq_number = htonl(seq);
             outgoing_mtcp_header.ack_number = htonl(0);
-            outgoing_mtcp_header.control = htonl(0);
+            outgoing_mtcp_header.control = htons(0);
             outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
             outgoing_mtcp_header.data_len = htonl(MICROTCP_MSS - sizeof(microtcp_header_t));
             outgoing_mtcp_header.future_use0 = htonl(0);
@@ -580,7 +580,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             // Construct packet
             outgoing_mtcp_header.seq_number = htonl(seq);
             outgoing_mtcp_header.ack_number = htonl(0);
-            outgoing_mtcp_header.control = htonl(0);
+            outgoing_mtcp_header.control = htons(0);
             outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE);
             outgoing_mtcp_header.data_len = htonl(bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)));
             outgoing_mtcp_header.future_use0 = htonl(0);
