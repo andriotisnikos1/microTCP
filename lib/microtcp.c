@@ -27,8 +27,6 @@
  #include <stdlib.h>
  #include <stdio.h>
 
- struct acks *ack_list_head = NULL;
-
  microtcp_sock_t microtcp_socket(int domain, int type, int protocol) {
      microtcp_sock_t sock;
      sock.sd = socket(domain, type, protocol);
@@ -550,7 +548,6 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
 
         // send full chunks
         for (i = 0; i < chunks; i++) {
-            insert(seq);
 
             // Construct packet to calculate checksum
             outgoing_mtcp_header.seq_number = htonl(seq);
@@ -587,8 +584,6 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
         // check for a semi-filled chunk
         if (bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)) != 0) {
             chunks++;
-
-            insert(seq);
 
             // Construct packet
             outgoing_mtcp_header.seq_number = htonl(seq);
@@ -667,7 +662,6 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
                 socket->curr_win_size = internal_mtcp_header.window;
                 last_ack = internal_mtcp_header.ack_number;
                 dup_ack = 0;
-                removeAck(internal_mtcp_header.ack_number);
                 if (socket->cwnd < socket->ssthresh) {
                     // slow start
                     socket->cwnd += MICROTCP_MSS;
@@ -699,7 +693,6 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
         } else { // all acks received, continue
             remaining -= bytes_to_send;
         }
-        removeAllAcks();
         dup_ack = 0;
     }
 
@@ -835,58 +828,4 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     }
 
     return bytes_copied;
-}
-
-
-//Helper functions
-
-// Inserts ack to the list
-void insert(size_t ack_number) {
-    struct acks *new_ack = (struct acks *)malloc(sizeof(struct acks));
-    new_ack->ack_number = ack_number;
-    new_ack->next = NULL;
-
-    if (ack_list_head == NULL) {
-        ack_list_head = new_ack;
-    } else {
-        struct acks *current = ack_list_head;
-        while (current->next != NULL) {
-            current = current->next;
-        }
-        current->next = new_ack;
-    }
-}
-
-// Removes ack from the list
-void removeAck(size_t ack_number) {
-    struct acks *current = ack_list_head;
-    struct acks *previous = NULL;
-
-    while (current != NULL) {
-        if (current->ack_number == ack_number) {
-            if (previous == NULL) {
-                ack_list_head = current->next;
-            } else {
-                previous->next = current->next;
-            }
-            free(current);
-            return;
-        }
-        previous = current;
-        current = current->next;
-    }
-    return;
-}
-
-// Removes all acks from the list
-void removeAllAcks() {
-    struct acks *current = ack_list_head;
-    struct acks *next;
-
-    while (current != NULL) {
-        next = current->next;
-        free(current);
-        current = next;
-    }
-    ack_list_head = NULL;
 }
