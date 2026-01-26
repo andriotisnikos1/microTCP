@@ -814,16 +814,6 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
 
 //Helper functions
 
-// Function to get minimum of 2 or 3 size_t values
-ssize_t min(size_t a, size_t b, size_t c) {
-    if (c == NULL) {
-        return (a < b) ? a : b;
-    } else {
-        size_t temp = (a < b) ? a : b;
-        return (temp < c) ? temp : c;
-    }
-}
-
 // Inserts ack to the list
 void insert(size_t ack_number) {
     struct acks *new_ack = (struct acks *)malloc(sizeof(struct acks));
