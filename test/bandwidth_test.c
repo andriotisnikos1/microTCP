@@ -187,7 +187,7 @@ int server_microtcp (uint16_t listen_port, const char *file) {
     return -EXIT_FAILURE;
   }
 
-  sock = microtcp_socket(AF_INET, SOCK_DGRAM, IPPROTO_TCP);
+  sock = microtcp_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sock.state == INVALID) {
     perror ("Opening microTCP socket");
     free (buffer);
@@ -365,7 +365,7 @@ client_microtcp (const char *serverip, uint16_t server_port, const char *file)
     return -EXIT_FAILURE;
   }
 
-  sock = microtcp_socket(AF_INET, SOCK_DGRAM, IPPROTO_TCP);
+  sock = microtcp_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sock.state == INVALID) {
     perror ("Opening microTCP socket");
     free (buffer);
