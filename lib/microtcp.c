@@ -20,7 +20,7 @@
 
  #include "microtcp.h"
  #include "../utils/crc32.h"
-#include <stddef.h>
+ #include <stddef.h>
  #include <time.h>
  #include <stdint.h>
  #include <string.h>
@@ -324,8 +324,14 @@
         socket->state = ESTABLISHED;
         socket->seq_number = ntohl(outgoing_mtcp_header.seq_number);
         socket->ack_number = internal_mtcp_header.seq_number + 1;
-        socket->peer_address = address;
-        socket->peer_address_len = address_len;
+        
+        // Memory allocation for peer address
+        socket->peer_address = (struct sockaddr *)malloc(address_len);
+        if (socket->peer_address) {
+            memcpy((void *)socket->peer_address, address, address_len);
+            socket->peer_address_len = address_len;
+        }
+        
         free(incoming_mtcp_header);
         return 0;
  }
@@ -774,7 +780,7 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
             // flush buffer
             size_t bytes_to_copy = bytes_accumulated;
 
-            // Έλεγχος για να μην ξεπεράσουμε το μέγεθος (length) που έδωσε ο χρήστης
+            // Ensure we do not copy more than what fits in the user buffer
             if (bytes_copied + bytes_to_copy > length) {
                bytes_to_copy = length - bytes_copied;
             }
@@ -820,7 +826,6 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     }
 
     // when out of the loop, copy any remaining accumulated data
-
     if (bytes_accumulated > 0 && bytes_copied < length) {
         size_t remaining_space = length - bytes_copied;
         size_t bytes_to_copy = (bytes_accumulated < remaining_space) ? bytes_accumulated : remaining_space;
@@ -831,9 +836,6 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
 
     return bytes_copied;
 }
-
-
-
 
 
 //Helper functions
