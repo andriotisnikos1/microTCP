@@ -26,6 +26,7 @@
  #include <string.h>
  #include <stdlib.h>
  #include <stdio.h>
+ #include <arpa/inet.h>
 
  microtcp_sock_t microtcp_socket(int domain, int type, int protocol) {
      microtcp_sock_t sock;
