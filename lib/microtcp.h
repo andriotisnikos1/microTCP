@@ -122,7 +122,7 @@ struct acks {
   struct acks *next;
 };
 
-struct acks *ack_list_head;
+extern struct acks *ack_list_head;
 
 microtcp_sock_t microtcp_socket (int domain, int type, int protocol);
 
@@ -150,6 +150,8 @@ ssize_t microtcp_recv (microtcp_sock_t *socket, void *buffer, size_t length, int
 
 void insert(size_t ack_number);
 
-int remove(size_t ack_number);
+void removeAck(size_t ack_number);
+
+void removeAllAcks();
 
 #endif /* LIB_MICROTCP_H_ */

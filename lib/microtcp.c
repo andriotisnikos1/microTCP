@@ -27,9 +27,6 @@
  #include <stdlib.h>
  #include <stdio.h>
 
- void removeAck(size_t ack_number);
- void removeAllAcks();
-
  microtcp_sock_t microtcp_socket(int domain, int type, int protocol) {
      microtcp_sock_t sock;
      sock.sd = socket(domain, type, protocol);
@@ -83,9 +80,10 @@
      }
 
      // Process packet after checking control = SYN
-     if (htons(incoming_mtcp_header->control) != SYN) {
-         perror("[microtcp_accept] expected SYN control flag\n");
-         return -1;
+     if (ntohs(incoming_mtcp_header->control) != SYN) {
+        perror("[microtcp_accept] expected SYN control flag");
+        free(incoming_mtcp_header);
+        return -1;
      }
 
      // Populate private header. Needed for checksum calculation
@@ -135,7 +133,7 @@
      }
      memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
      calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-     outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+     outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
      // send syn-ack, check for error
      send_status = sendto(socket->sd, &outgoing_mtcp_header,
@@ -167,7 +165,7 @@
      internal_mtcp_header.checksum = 0;
 
      // check control = ACK
-     if (htons(incoming_mtcp_header->control) != ACK) {
+     if (ntohs(incoming_mtcp_header->control) != ACK) {
          perror("[microtcp_accept] expected ACK control flag\n");
          free(incoming_mtcp_header);
          return -1;
@@ -187,12 +185,12 @@
      }
 
      // check for correct ack number, seq
-     if (ntohl(incoming_mtcp_header->seq_number) != outgoing_mtcp_header.ack_number) {
+     if (ntohl(incoming_mtcp_header->seq_number) != ntohl(outgoing_mtcp_header.ack_number)) {
          perror("[microtcp_accept] incorrect seq number in ACK\n");
          free(incoming_mtcp_header);
          return -1;
      }
-     if (ntohl(incoming_mtcp_header->ack_number) != outgoing_mtcp_header.seq_number + 1) {
+     if (ntohl(incoming_mtcp_header->ack_number) != ntohl(outgoing_mtcp_header.seq_number) + 1) {
          perror("[microtcp_accept] incorrect ack number in ACK\n");
          free(incoming_mtcp_header);
          return -1;
@@ -236,7 +234,7 @@
         }
         memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
         calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+        outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
         // send SYN packet
         send_status = sendto(socket->sd, &outgoing_mtcp_header,
@@ -267,7 +265,7 @@
         internal_mtcp_header.checksum = 0;
 
         // check control = SYN-ACK
-        if (htons(incoming_mtcp_header->control) != SYN_ACK) {
+        if (ntohs(incoming_mtcp_header->control) != SYN_ACK) {
             perror("[microtcp_connect] expected SYN-ACK control flag\n");
             free(incoming_mtcp_header);
             return -1;
@@ -304,7 +302,7 @@
         }
         memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
         calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+        outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
         // send final ACK packet
         send_status = sendto(socket->sd, &outgoing_mtcp_header,
@@ -353,7 +351,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     }
     memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
     calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-    outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+    outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
     // send FIN packet
     send_status = sendto(socket->sd, &outgoing_mtcp_header,
@@ -385,7 +383,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     internal_mtcp_header.checksum = 0;
 
     // check control = ACK
-    if (htons(incoming_mtcp_header->control) != ACK) {
+    if (ntohs(incoming_mtcp_header->control) != ACK) {
         perror("[microtcp_shutdown] expected ACK control flag\n");
         free(incoming_mtcp_header);
         return -1;
@@ -435,7 +433,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     internal_mtcp_header.checksum = 0;
 
     // check control = FIN
-    if (htons(incoming_mtcp_header->control) != FIN) {
+    if (ntohs(incoming_mtcp_header->control) != FIN) {
         perror("[microtcp_shutdown] expected FIN control flag\n");
         free(incoming_mtcp_header);
         return -1;
@@ -472,7 +470,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     }
     memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
     calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-    outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+    outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
     // send final ACK packet
     send_status = sendto(socket->sd, &outgoing_mtcp_header,
@@ -559,7 +557,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
             memcpy(checksum_byte_arr + sizeof(microtcp_header_t), buffer + data_sent, MICROTCP_MSS - sizeof(microtcp_header_t));
             calculated_checksum = crc32(checksum_byte_arr, MICROTCP_MSS);
-            outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+            outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
             // prepare full packet
             memcpy(packet, &outgoing_mtcp_header, sizeof(microtcp_header_t));
@@ -597,7 +595,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             memcpy(checksum_byte_arr, &outgoing_mtcp_header, sizeof(microtcp_header_t));
             memcpy(checksum_byte_arr + sizeof(microtcp_header_t), buffer + data_sent, bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)));
             calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t) + bytes_to_send % (MICROTCP_MSS - sizeof(microtcp_header_t)));
-            outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+            outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
             // prepare full packet
             memcpy(packet, &outgoing_mtcp_header, sizeof(microtcp_header_t));
@@ -691,6 +689,10 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
         removeAllAcks();
         dup_ack = 0;
     }
+
+    free(incoming_mtcp_header);
+    free(packet);
+    return data_sent;
 }
 
 ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int flags) {
@@ -793,7 +795,7 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
         }
         memcpy(checksum_byte_arr, &outgoing_mtcp_header, mtcp_header_size);
         calculated_checksum = crc32(checksum_byte_arr, mtcp_header_size);
-        outgoing_mtcp_header.checksum = ntohl(calculated_checksum);
+        outgoing_mtcp_header.checksum = htonl(calculated_checksum);
 
         // send ACK packet
         sent_bytes = sendto(socket->sd, &outgoing_mtcp_header, mtcp_header_size, 0, socket->peer_address, socket->peer_address_len);
