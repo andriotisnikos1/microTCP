@@ -27,6 +27,8 @@
  #include <stdlib.h>
  #include <stdio.h>
 
+ struct acks *ack_list_head = NULL;
+
  microtcp_sock_t microtcp_socket(int domain, int type, int protocol) {
      microtcp_sock_t sock;
      sock.sd = socket(domain, type, protocol);
@@ -200,8 +202,13 @@
      socket->state = ESTABLISHED;
      socket->seq_number = internal_mtcp_header.ack_number;
      socket->ack_number = internal_mtcp_header.seq_number + 1;
-        socket->peer_address = address;
+
+     // Memory allocation for peer address
+    socket->peer_address = (struct sockaddr *)malloc(address_len);
+    if (socket->peer_address) {
+        memcpy((void *)socket->peer_address, address, address_len);
         socket->peer_address_len = address_len;
+    }
 
      return 0;
  }
@@ -765,8 +772,15 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
         // buffer flush check
         if (bytes_accumulated + incoming_data_segment_size > MICROTCP_RECVBUF_LEN && !is_out_of_order) {
             // flush buffer
-            memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_accumulated);
-            bytes_copied += bytes_accumulated;
+            size_t bytes_to_copy = bytes_accumulated;
+
+            // Έλεγχος για να μην ξεπεράσουμε το μέγεθος (length) που έδωσε ο χρήστης
+            if (bytes_copied + bytes_to_copy > length) {
+               bytes_to_copy = length - bytes_copied;
+            }
+
+            memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_to_copy);
+            bytes_copied += bytes_to_copy;
             bytes_accumulated = 0;
         }
 
@@ -803,6 +817,16 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
             perror("[microtcp_recv] sendto failed\n");
             return -1;
         }
+    }
+
+    // when out of the loop, copy any remaining accumulated data
+
+    if (bytes_accumulated > 0 && bytes_copied < length) {
+        size_t remaining_space = length - bytes_copied;
+        size_t bytes_to_copy = (bytes_accumulated < remaining_space) ? bytes_accumulated : remaining_space;
+    
+        memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_to_copy);
+        bytes_copied += bytes_to_copy;
     }
 
     return bytes_copied;
