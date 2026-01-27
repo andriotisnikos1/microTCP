@@ -735,8 +735,7 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     size_t expected_sequence_number = socket->ack_number,
            mtcp_header_size = sizeof(microtcp_header_t),
            incoming_data_segment_size;
-    int bytes_accumulated = 0,
-        bytes_copied = 0,
+    int bytes_copied = 0,
         is_out_of_order = 0;
     ssize_t received_bytes, sent_bytes;
     uint8_t incoming_packet_buffer[MICROTCP_MSS + mtcp_header_size],
@@ -802,9 +801,9 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
         }
 
         // buffer flush check
-        if (bytes_accumulated + incoming_data_segment_size > MICROTCP_RECVBUF_LEN && !is_out_of_order) {
+        if (socket->buf_fill_level + incoming_data_segment_size > MICROTCP_RECVBUF_LEN && !is_out_of_order) {
             // flush buffer
-            size_t bytes_to_copy = bytes_accumulated;
+            size_t bytes_to_copy = socket->buf_fill_level;
 
             // Ensure we do not copy more than what fits in the user buffer
             if (bytes_copied + bytes_to_copy > length) {
@@ -813,25 +812,25 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
 
             memcpy(buffer + bytes_copied, socket->recvbuf, bytes_to_copy);
             bytes_copied += bytes_to_copy;
-            bytes_accumulated = 0;
+            socket->buf_fill_level = 0;
         }
 
         // if in order, copy to user buffer
         if (!is_out_of_order) {
-            memcpy(socket->recvbuf + bytes_accumulated, packet_buffer_data_segment, incoming_data_segment_size);
-            bytes_accumulated += incoming_data_segment_size;
+            memcpy(socket->recvbuf + socket->buf_fill_level, packet_buffer_data_segment, incoming_data_segment_size);
+            socket->buf_fill_level += incoming_data_segment_size;
             expected_sequence_number += incoming_data_segment_size;
             socket->ack_number = expected_sequence_number;
         }
 
         // if a buffer >= length is filled, break to let exit logic copy
-        if (bytes_accumulated >= length) break;
+        if (socket->buf_fill_level >= length) break;
 
         // send ack
         outgoing_mtcp_header.seq_number = htonl(socket->seq_number);
         outgoing_mtcp_header.ack_number = htonl(socket->ack_number);
         outgoing_mtcp_header.control = htons(ACK);
-        outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE - bytes_accumulated); // advertise remaining buffer space
+        outgoing_mtcp_header.window = htons(MICROTCP_WIN_SIZE - socket->buf_fill_level); // advertise remaining buffer space
         outgoing_mtcp_header.data_len = htonl(0);
         outgoing_mtcp_header.future_use0 = htonl(0);
         outgoing_mtcp_header.future_use1 = htonl(0);
@@ -855,12 +854,16 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     }
 
     // when out of the loop, copy any remaining accumulated data
-    if (bytes_accumulated > 0 && bytes_copied < length) {
+    if (socket->buf_fill_level > 0 && bytes_copied < length) {
         size_t remaining_space = length - bytes_copied;
-        size_t bytes_to_copy = (bytes_accumulated < remaining_space) ? bytes_accumulated : remaining_space;
+        size_t bytes_to_copy = (socket->buf_fill_level < remaining_space) ? socket->buf_fill_level : remaining_space;
 
         memcpy(buffer + bytes_copied, socket->recvbuf, bytes_to_copy);
         bytes_copied += bytes_to_copy;
+
+        // truncate socket->recvbuf by bytes_to_copy
+        memmove(socket->recvbuf, socket->recvbuf + bytes_to_copy, socket->buf_fill_level - bytes_to_copy);
+        socket->buf_fill_level -= bytes_to_copy;
     }
 
     return bytes_copied;
