@@ -824,6 +824,9 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
             socket->ack_number = expected_sequence_number;
         }
 
+        // if a buffer >= length is filled, break to let exit logic copy
+        if (bytes_accumulated >= length) break;
+
         // send ack
         outgoing_mtcp_header.seq_number = htonl(socket->seq_number);
         outgoing_mtcp_header.ack_number = htonl(socket->ack_number);
