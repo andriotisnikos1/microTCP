@@ -751,7 +751,10 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     while (bytes_copied < length) {
         // receive data. return -1 on error as per spec
         received_bytes = recvfrom(socket->sd, incoming_packet_buffer, MICROTCP_MSS + mtcp_header_size, 0, socket->peer_address, &socket->peer_address_len);
-        if (received_bytes < 0) return -1;
+        if (received_bytes < 0) {
+            perror("[microtcp_recv] recvfrom failed\n");
+            return -1;
+        }
 
         incoming_data_segment_size = received_bytes - mtcp_header_size;
 
@@ -790,6 +793,7 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
         // check termination by peer
         if (internal_mtcp_header.control == FIN + ACK) {
             socket->state = CLOSING_BY_PEER;
+            perror("[microtcp_recv] connection termination by peer detected\n");
             return -1;
         }
 
