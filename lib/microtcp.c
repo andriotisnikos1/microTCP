@@ -342,14 +342,14 @@
         socket->state = ESTABLISHED;
         socket->seq_number = ntohl(outgoing_mtcp_header.seq_number);
         socket->ack_number = internal_mtcp_header.seq_number + 1;
-        
+
         // Memory allocation for peer address
         socket->peer_address = (struct sockaddr *)malloc(address_len);
         if (socket->peer_address) {
             memcpy((void *)socket->peer_address, address, address_len);
             socket->peer_address_len = address_len;
         }
-        
+
         free(incoming_mtcp_header);
         return 0;
  }
@@ -741,7 +741,6 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     ssize_t received_bytes, sent_bytes;
     uint8_t incoming_packet_buffer[MICROTCP_MSS + mtcp_header_size],
             packet_buffer_data_segment[MICROTCP_MSS],
-            incoming_data_accumulator[MICROTCP_RECVBUF_LEN],
             checksum_byte_arr[MICROTCP_MSS + mtcp_header_size];
     microtcp_header_t incoming_mtcp_header,
                       internal_mtcp_header,
@@ -812,14 +811,14 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
                bytes_to_copy = length - bytes_copied;
             }
 
-            memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_to_copy);
+            memcpy(buffer + bytes_copied, socket->recvbuf, bytes_to_copy);
             bytes_copied += bytes_to_copy;
             bytes_accumulated = 0;
         }
 
         // if in order, copy to user buffer
         if (!is_out_of_order) {
-            memcpy(incoming_data_accumulator + bytes_accumulated, packet_buffer_data_segment, incoming_data_segment_size);
+            memcpy(socket->recvbuf + bytes_accumulated, packet_buffer_data_segment, incoming_data_segment_size);
             bytes_accumulated += incoming_data_segment_size;
             expected_sequence_number += incoming_data_segment_size;
             socket->ack_number = expected_sequence_number;
@@ -856,8 +855,8 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
     if (bytes_accumulated > 0 && bytes_copied < length) {
         size_t remaining_space = length - bytes_copied;
         size_t bytes_to_copy = (bytes_accumulated < remaining_space) ? bytes_accumulated : remaining_space;
-    
-        memcpy(buffer + bytes_copied, incoming_data_accumulator, bytes_to_copy);
+
+        memcpy(buffer + bytes_copied, socket->recvbuf, bytes_to_copy);
         bytes_copied += bytes_to_copy;
     }
 
