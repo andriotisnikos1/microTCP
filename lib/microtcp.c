@@ -65,6 +65,7 @@
      microtcp_header_t internal_mtcp_header, outgoing_mtcp_header;
      uint8_t checksum_byte_arr[MICROTCP_RECVBUF_LEN];
      uint32_t calculated_checksum;
+     uint32_t incoming_checksum;
 
      if (!incoming_mtcp_header) {
          perror("[microtcp_accept] malloc failed\n");
@@ -87,16 +88,8 @@
         return -1;
      }
 
-     // Populate private header. Needed for checksum calculation
-     internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
-     internal_mtcp_header.ack_number = 0;
-     internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
-     internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
-     internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
-     internal_mtcp_header.future_use0 = 0;
-     internal_mtcp_header.future_use1 = 0;
-     internal_mtcp_header.future_use2 = 0;
-     internal_mtcp_header.checksum = 0;
+     incoming_checksum = ntohl(incoming_mtcp_header->checksum);
+     incoming_mtcp_header->checksum = 0; // set to 0 for checksum calculation
 
      /**
       * Convert to byte array for checksum calculation.
@@ -107,15 +100,26 @@
      for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
          checksum_byte_arr[i] = 0;
      }
-     memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+     memcpy(checksum_byte_arr, incoming_mtcp_header, sizeof(microtcp_header_t));
 
      calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
 
-     if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+     if (calculated_checksum != incoming_checksum) {
          perror("[microtcp_accept - SYN] checksum mismatch\n");
          free(incoming_mtcp_header);
          return -1;
      }
+
+     // Populate private header.
+     internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+     internal_mtcp_header.ack_number = 0;
+     internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+     internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+     internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+     internal_mtcp_header.future_use0 = 0;
+     internal_mtcp_header.future_use1 = 0;
+     internal_mtcp_header.future_use2 = 0;
+     internal_mtcp_header.checksum = 0;
 
      // Construct SYN-ACK response
      outgoing_mtcp_header.seq_number = htonl(rand() % 100 + 1);
@@ -154,16 +158,8 @@
          return -1;
      }
 
-     // contruct internal header for checksum verification
-     internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
-     internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
-     internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
-     internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
-     internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
-     internal_mtcp_header.future_use0 = 0;
-     internal_mtcp_header.future_use1 = 0;
-     internal_mtcp_header.future_use2 = 0;
-     internal_mtcp_header.checksum = 0;
+     incoming_checksum = ntohl(incoming_mtcp_header->checksum);
+     incoming_mtcp_header->checksum = 0; // set to 0 for checksum calculation
 
      // check control = ACK
      if (ntohs(incoming_mtcp_header->control) != ACK) {
@@ -176,14 +172,25 @@
      for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
          checksum_byte_arr[i] = 0;
      }
-     memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+     memcpy(checksum_byte_arr, incoming_mtcp_header, sizeof(microtcp_header_t));
      calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
 
-     if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+     if (calculated_checksum != incoming_checksum) {
          perror("[microtcp_accept - ACK] checksum mismatch\n");
          free(incoming_mtcp_header);
          return -1;
      }
+
+     // contruct internal header
+     internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+     internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
+     internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+     internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+     internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+     internal_mtcp_header.future_use0 = 0;
+     internal_mtcp_header.future_use1 = 0;
+     internal_mtcp_header.future_use2 = 0;
+     internal_mtcp_header.checksum = 0;
 
      // check for correct ack number, seq
      if (ntohl(incoming_mtcp_header->seq_number) != ntohl(outgoing_mtcp_header.ack_number)) {
@@ -200,14 +207,22 @@
      // connection established successfully. update socket state
      socket->state = ESTABLISHED;
      socket->seq_number = internal_mtcp_header.ack_number;
-     socket->ack_number = internal_mtcp_header.seq_number + 1;
+     socket->ack_number = internal_mtcp_header.seq_number;
 
      // Memory allocation for peer address
-    socket->peer_address = (struct sockaddr *)malloc(address_len);
-    if (socket->peer_address) {
-        memcpy((void *)socket->peer_address, address, address_len);
-        socket->peer_address_len = address_len;
-    }
+     socket->peer_address = (struct sockaddr *)malloc(address_len);
+     if (socket->peer_address) {
+         memcpy((void *)socket->peer_address, address, address_len);
+         socket->peer_address_len = address_len;
+     }
+
+     socket->recvbuf = (uint8_t *)malloc(MICROTCP_RECVBUF_LEN);
+     socket->buf_fill_level = 0;
+     if (!socket->recvbuf) {
+         perror("[microtcp_accept] recvbuf malloc failed\n");
+         free(incoming_mtcp_header);
+         return -1;
+     }
 
      return 0;
  }
@@ -217,6 +232,7 @@
         ssize_t send_status, recv_status;
         microtcp_header_t outgoing_mtcp_header, *incoming_mtcp_header = (microtcp_header_t *)malloc(sizeof(microtcp_header_t)), internal_mtcp_header;
         uint8_t checksum_byte_arr[MICROTCP_RECVBUF_LEN];
+        uint32_t incoming_checksum;
 
         if (!incoming_mtcp_header) {
             perror("[microtcp_connect] malloc failed\n");
@@ -259,16 +275,8 @@
             return -1;
         }
 
-        // construct internal header for checksum verification
-        internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
-        internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
-        internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
-        internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
-        internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
-        internal_mtcp_header.future_use0 = 0;
-        internal_mtcp_header.future_use1 = 0;
-        internal_mtcp_header.future_use2 = 0;
-        internal_mtcp_header.checksum = 0;
+        incoming_checksum = ntohl(incoming_mtcp_header->checksum);
+        incoming_mtcp_header->checksum = 0; // set to 0 for checksum calculation
 
         // check control = SYN-ACK
         if (ntohs(incoming_mtcp_header->control) != SYN_ACK) {
@@ -281,14 +289,25 @@
         for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
             checksum_byte_arr[i] = 0;
         }
-        memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+        memcpy(checksum_byte_arr, incoming_mtcp_header, sizeof(microtcp_header_t));
         calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
 
-        if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+        if (calculated_checksum != incoming_checksum) {
             perror("[microtcp_connect - SYN-ACK] checksum mismatch\n");
             free(incoming_mtcp_header);
             return -1;
         }
+
+        // construct internal header
+        internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+        internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
+        internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+        internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+        internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+        internal_mtcp_header.future_use0 = 0;
+        internal_mtcp_header.future_use1 = 0;
+        internal_mtcp_header.future_use2 = 0;
+        internal_mtcp_header.checksum = 0;
 
         // construct final ACK packet
         // keep same seq number as the one in SYN, just + 1. usage of outgoing_mtcp_header.seq_number is correct
@@ -340,6 +359,7 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     ssize_t send_status, recv_status;
     microtcp_header_t outgoing_mtcp_header, *incoming_mtcp_header = (microtcp_header_t *)malloc(sizeof(microtcp_header_t)), internal_mtcp_header;
     uint8_t checksum_byte_arr[MICROTCP_RECVBUF_LEN];
+    uint32_t incoming_checksum;
 
     if (!incoming_mtcp_header) {
         perror("[microtcp_shutdown] malloc failed\n");
@@ -383,16 +403,8 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
         return -1;
     }
 
-    // construct internal header for checksum verification
-    internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
-    internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
-    internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
-    internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
-    internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
-    internal_mtcp_header.future_use0 = 0;
-    internal_mtcp_header.future_use1 = 0;
-    internal_mtcp_header.future_use2 = 0;
-    internal_mtcp_header.checksum = 0;
+    incoming_checksum = ntohl(incoming_mtcp_header->checksum);
+    incoming_mtcp_header->checksum = 0; // set to 0 for checksum calculation
 
     // check control = ACK
     if (ntohs(incoming_mtcp_header->control) != ACK) {
@@ -412,15 +424,26 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
         checksum_byte_arr[i] = 0;
     }
-    memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+    memcpy(checksum_byte_arr, incoming_mtcp_header, sizeof(microtcp_header_t));
     calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
 
     // check checksum mismatch
-    if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+    if (calculated_checksum != incoming_checksum) {
         perror("[microtcp_shutdown - ACK] checksum mismatch\n");
         free(incoming_mtcp_header);
         return -1;
     }
+
+    // construct internal header
+    internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+    internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
+    internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+    internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+    internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+    internal_mtcp_header.future_use0 = 0;
+    internal_mtcp_header.future_use1 = 0;
+    internal_mtcp_header.future_use2 = 0;
+    internal_mtcp_header.checksum = 0;
 
     // transition to CLOSING_BY_HOST state after successful FIN-ACK exchange
     socket->state = CLOSING_BY_HOST;
@@ -433,16 +456,8 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
         return -1;
     }
 
-    // construct internal header for checksum verification
-    internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
-    internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
-    internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
-    internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
-    internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
-    internal_mtcp_header.future_use0 = 0;
-    internal_mtcp_header.future_use1 = 0;
-    internal_mtcp_header.future_use2 = 0;
-    internal_mtcp_header.checksum = 0;
+    incoming_checksum = ntohl(incoming_mtcp_header->checksum);
+    incoming_mtcp_header->checksum = 0; // set to 0 for checksum calculation
 
     // check control = FIN
     if (ntohs(incoming_mtcp_header->control) != FIN) {
@@ -455,15 +470,26 @@ int microtcp_shutdown(microtcp_sock_t *socket, int how) {
     for (int i = 0; i < MICROTCP_RECVBUF_LEN; i++) {
         checksum_byte_arr[i] = 0;
     }
-    memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
+    memcpy(checksum_byte_arr, incoming_mtcp_header, sizeof(microtcp_header_t));
     calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
 
     // check checksum mismatch
-    if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
+    if (calculated_checksum != incoming_checksum) {
         perror("[microtcp_shutdown - FIN] checksum mismatch\n");
         free(incoming_mtcp_header);
         return -1;
     }
+
+    // construct internal header
+    internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
+    internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
+    internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
+    internal_mtcp_header.window = ntohs(incoming_mtcp_header->window);
+    internal_mtcp_header.data_len = ntohl(incoming_mtcp_header->data_len);
+    internal_mtcp_header.future_use0 = 0;
+    internal_mtcp_header.future_use1 = 0;
+    internal_mtcp_header.future_use2 = 0;
+    internal_mtcp_header.checksum = 0;
 
     // finalize shutdown: construct final ACK packet
     outgoing_mtcp_header.seq_number = htonl(socket->seq_number + 1);
@@ -517,6 +543,7 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
     size_t last_ack = socket->seq_number; // last ack received
     int dup_ack; // duplicate acks counter
     int retransmit; // retransmission flag
+    uint32_t incoming_checksum;
 
     if (buffer == NULL || length == 0) {
         if (buffer == NULL) {
@@ -626,7 +653,24 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
                 break;
             }
 
-            // construct internal header for checksum verification
+            incoming_checksum = ntohl(incoming_mtcp_header->checksum);
+            incoming_mtcp_header->checksum = 0; // set to 0 for checksum calculation
+            for (int j = 0; j < MICROTCP_MSS; j++) {
+                checksum_byte_arr[j] = 0;
+            }
+            memcpy(checksum_byte_arr, incoming_mtcp_header, sizeof(microtcp_header_t));
+            calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
+            if (calculated_checksum != incoming_checksum) {
+                // checksum mismatch, ignore ack
+                i--;
+                continue;
+            } else if (ntohs(incoming_mtcp_header->control) != ACK) {
+                // not an ack, ignore
+                i--;
+                continue;
+            }
+
+            // construct internal header
             internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header->seq_number);
             internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header->ack_number);
             internal_mtcp_header.control = ntohs(incoming_mtcp_header->control);
@@ -636,21 +680,6 @@ ssize_t microtcp_send(microtcp_sock_t *socket, const void *buffer, size_t length
             internal_mtcp_header.future_use1 = 0;
             internal_mtcp_header.future_use2 = 0;
             internal_mtcp_header.checksum = 0;
-            for (int j = 0; j < MICROTCP_MSS; j++) {
-                checksum_byte_arr[j] = 0;
-            }
-            memcpy(checksum_byte_arr, &internal_mtcp_header, sizeof(microtcp_header_t));
-
-            calculated_checksum = crc32(checksum_byte_arr, sizeof(microtcp_header_t));
-            if (calculated_checksum != ntohl(incoming_mtcp_header->checksum)) {
-                // checksum mismatch, ignore ack
-                i--;
-                continue;
-            } else if (ntohs(incoming_mtcp_header->control) != ACK) {
-                // not an ack, ignore
-                i--;
-                continue;
-            }
 
             // ack received
             if (last_ack == internal_mtcp_header.ack_number) {
@@ -718,6 +747,7 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
                       internal_mtcp_header,
                       outgoing_mtcp_header;
     uint32_t calculated_checksum;
+    uint32_t incoming_checksum;
 
 
     while (bytes_copied < length) {
@@ -731,6 +761,23 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
         memcpy(&incoming_mtcp_header, incoming_packet_buffer, mtcp_header_size);
         memcpy(packet_buffer_data_segment, incoming_packet_buffer + mtcp_header_size, incoming_data_segment_size);
 
+        incoming_checksum = ntohl(incoming_mtcp_header.checksum);
+        incoming_mtcp_header.checksum = 0; // set to 0 for checksum calculation
+
+        // calculate checksum
+        for (int i = 0; i < MICROTCP_MSS + mtcp_header_size; i++) {
+            checksum_byte_arr[i] = 0;
+        }
+
+        memcpy(checksum_byte_arr, &incoming_mtcp_header, mtcp_header_size);
+        memcpy(checksum_byte_arr + mtcp_header_size, packet_buffer_data_segment, incoming_data_segment_size);
+
+        calculated_checksum = crc32(checksum_byte_arr, mtcp_header_size + incoming_data_segment_size);
+        if (calculated_checksum != incoming_checksum) {
+            // checksum mismatch, ignore packet
+            continue;
+        }
+
         // construct internal header for checksum verification
         internal_mtcp_header.seq_number = ntohl(incoming_mtcp_header.seq_number);
         internal_mtcp_header.ack_number = ntohl(incoming_mtcp_header.ack_number);
@@ -741,20 +788,6 @@ ssize_t microtcp_recv(microtcp_sock_t *socket, void *buffer, size_t length, int 
         internal_mtcp_header.future_use1 = 0;
         internal_mtcp_header.future_use2 = 0;
         internal_mtcp_header.checksum = 0;
-
-        // calculate checksum
-        for (int i = 0; i < MICROTCP_MSS + mtcp_header_size; i++) {
-            checksum_byte_arr[i] = 0;
-        }
-
-        memcpy(checksum_byte_arr, &internal_mtcp_header, mtcp_header_size);
-        memcpy(checksum_byte_arr + mtcp_header_size, packet_buffer_data_segment, incoming_data_segment_size);
-
-        calculated_checksum = crc32(checksum_byte_arr, mtcp_header_size + incoming_data_segment_size);
-        if (calculated_checksum != ntohl(incoming_mtcp_header.checksum)) {
-            // checksum mismatch, ignore packet
-            continue;
-        }
 
         // check termination by peer
         if (internal_mtcp_header.control == FIN + ACK) {

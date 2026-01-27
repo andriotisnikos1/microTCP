@@ -227,8 +227,6 @@ int server_microtcp (uint16_t listen_port, const char *file) {
    * right and careful way :-)
    */
 
-  //sock.peer_address = (struct sockaddr *) &sin;
-  //sock.peer_address_len = sizeof(struct sockaddr_in);
   clock_gettime (CLOCK_MONOTONIC_RAW, &start_time);
   received = microtcp_recv ( &sock, buffer, CHUNK_SIZE, 0);
   while (received > 0) {
